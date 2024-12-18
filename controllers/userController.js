@@ -1,16 +1,72 @@
 const ApiError = require("../error/ApiError");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const { User, Basket } = require("../models/models");
+
+const generateJwt = (id, email, role) => {
+  return jwt.sign({ id, email, role }, process.env.SECRET_KEY, {
+    expiresIn: "24h",
+  });
+};
 
 class UserController {
-  async register(req, res) {}
+  async register(req, res, next) {
+    const { email, password, role } = req.body;
 
-  async login(req, res) {}
+    if (!email || !password) {
+      return next(ApiError.badRequest("Undefind email or password"));
+    }
+
+    const oneUser = await User.findOne({ where: { email } });
+
+    if (oneUser) {
+      return next(
+        ApiError.badRequest("User with this email already in system")
+      );
+    }
+
+    const hashPassword = await bcrypt.hash(password, 5);
+
+    const registratedUser = await User.create({
+      email,
+      password: hashPassword,
+      role,
+    });
+    const basket = await Basket.create({ userId: registratedUser.id });
+
+    const token = generateJwt(
+      registratedUser.id,
+      registratedUser.email,
+      registratedUser.role
+    );
+    return res.json({ token });
+  }
+
+  async login(req, res, next) {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return next(ApiError.badRequest("Undefind email or password"));
+    }
+
+    const oneUser = await User.findOne({ where: { email } });
+
+    if (!oneUser) {
+      return next(ApiError.badRequest("User is not register"));
+    }
+
+    let comparePassword = bcrypt.compareSync(password, oneUser.password);
+
+    if (!comparePassword) {
+      return next(ApiError.badRequest("Password is false"));
+    }
+    const token = generateJwt(oneUser.id, oneUser.email, oneUser.role);
+    return res.json({ token });
+  }
 
   async check(req, res, next) {
-    const { id } = req.query;
-    if (!id) {
-      return next(ApiError.badRequest("Id is not defind"));
-    }
-    res.json(id);
+    const token = generateJwt(req.user.id, req.user.email, req.user.role);
+    return res.json({ token });
   }
 }
 
